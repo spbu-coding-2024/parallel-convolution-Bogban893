@@ -3,6 +3,7 @@ package org.example
 import org.example.include.*
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.RepeatedTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.MethodSource
@@ -217,6 +218,33 @@ class ConvolutionTest {
 
         assertEquals(p.w, result.width, "Width must be preserved")
         assertEquals(p.h, result.height, "Height must be preserved")
+    }
+
+    @RepeatedTest(10)
+    fun `parallel result matches sequential`() {
+        val imageSizes = listOf(
+            Triple(1, 1, 1),
+            Triple(16, 16, 3),
+            Triple(64, 64, 5),
+            Triple(128, 64, 7),
+        )
+        val threadCounts = listOf(1, 2, 4)
+
+        imageSizes.forEach { (w, h, kSize) ->
+            val pixels = randomImage(w, h)
+            val kernel = randomKernel(kSize)
+            val expected = applyConvolution(w, h, pixels, kernel)
+
+            threadCounts.forEach { threads ->
+                SeparationMethods.entries.forEach { method ->
+                    val actual = parallelConvolution(w, h, pixels, kernel, threads, method).toPixels()
+                    assertArrayEquals(
+                        expected, actual,
+                        "Method=$method threads=$threads img=${w}x${h} kernel=${kSize}x${kSize}"
+                    )
+                }
+            }
+        }
     }
 
     companion object {
