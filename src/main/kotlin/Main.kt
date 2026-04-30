@@ -36,7 +36,6 @@ fun main(args: Array<String>) {
         description = "Output image path",
         fullName = "output"
     ).default("output.png")
-    parser.parse(args)
 
     val thread by parser.option(
         ArgType.Int,
@@ -44,8 +43,10 @@ fun main(args: Array<String>) {
         description = "Thread count",
     ).default(2)
 
+    parser.parse(args)
+
     when (mode) {
         Mode.SEQUENTIAL -> runSequential(image, kernel, output)
-        Mode.PARALLEL -> runParallel(image, kernel, output, thread, /*separationMethods*/)
+        Mode.PARALLEL -> runParallel(image, kernel, output, thread)
     }
 }

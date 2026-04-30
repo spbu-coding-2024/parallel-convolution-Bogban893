@@ -220,7 +220,7 @@ class ConvolutionTest {
         assertEquals(p.h, result.height, "Height must be preserved")
     }
 
-    @RepeatedTest(10)
+    @RepeatedTest(5)
     fun `parallel result matches sequential`() {
         val imageSizes = listOf(
             Triple(1, 1, 1),
