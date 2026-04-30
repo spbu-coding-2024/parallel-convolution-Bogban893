@@ -10,6 +10,13 @@ data class Kernel(
     val bias: Float
 )
 
+enum class SeparationMethods {
+    PIXEL_BY_PIXEL,
+    ROW_BY_ROW,
+    COLUMN_BY_COLUMN,
+    GRID
+}
+
 fun readKernel(file: File): Kernel {
     val lines = file.readLines().filter { it.isNotBlank() }
     val (rows, cols) = lines[0].split("\\s+".toRegex()).map { it.toInt() }
