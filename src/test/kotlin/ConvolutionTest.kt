@@ -219,12 +219,6 @@ class ConvolutionTest {
         assertEquals(p.h, result.height, "Height must be preserved")
     }
 
-    // Здесь можно раскомментировать ваш тест для многопоточности, когда будут готовы SeparationMethods
-    /*
-    @RepeatedTest(10)
-    fun `parallel result matches sequential`() { ... }
-    */
-
     companion object {
         @JvmStatic
         fun imageSizes(): Stream<ImageKernelSize> = Stream.of(
