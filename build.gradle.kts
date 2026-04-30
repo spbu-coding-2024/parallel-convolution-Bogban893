@@ -43,8 +43,10 @@ benchmark {
             warmups = 5
             iterations = 10
             iterationTime = 2
+            iterationTimeUnit = "ms"
             mode = "AverageTime"
             outputTimeUnit = "MILLISECONDS"
+            reportFormat = "json"
         }
     }
     targets {
