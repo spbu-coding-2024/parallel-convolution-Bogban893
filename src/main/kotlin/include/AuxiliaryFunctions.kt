@@ -11,10 +11,18 @@ data class Kernel(
 )
 
 enum class SeparationMethods {
-    PIXEL_BY_PIXEL,
-    ROW_BY_ROW,
-    COLUMN_BY_COLUMN,
-    GRID
+    PIXEL_BY_PIXEL {
+        override fun toString() = "pixel"
+    },
+    ROW_BY_ROW {
+        override fun toString() = "row"
+    },
+    COLUMN_BY_COLUMN {
+        override fun toString() = "column"
+    },
+    GRID {
+        override fun toString() = "grid"
+    },
 }
 
 fun readKernel(file: File): Kernel {
