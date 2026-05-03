@@ -4,6 +4,7 @@ import kotlinx.cli.ArgParser
 import kotlinx.cli.ArgType
 import kotlinx.cli.default
 import kotlinx.cli.required
+import org.example.include.SeparationMethods
 import parallel.runParallel
 import sequential.runSequential
 
@@ -43,10 +44,16 @@ fun main(args: Array<String>) {
         description = "Thread count",
     ).default(2)
 
+    val methods by parser.option(
+        ArgType.Choice<SeparationMethods>(),
+        shortName = "s",
+        description = "Input separation methods"
+    ).default(SeparationMethods.ROW_BY_ROW)
+
     parser.parse(args)
 
     when (mode) {
         Mode.SEQUENTIAL -> runSequential(image, kernel, output)
-        Mode.PARALLEL -> runParallel(image, kernel, output, thread)
+        Mode.PARALLEL -> runParallel(image, kernel, output, thread, methods)
     }
 }

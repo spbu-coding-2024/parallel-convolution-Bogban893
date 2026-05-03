@@ -6,10 +6,9 @@ import org.example.include.toGrayscale
 import java.io.File
 import javax.imageio.ImageIO
 import org.example.include.parallelConvolution
-import java.awt.image.BufferedImage
 
 
-fun runParallel(imagePath: String, kernelPath: String, outputPath: String, thread: Int) {
+fun runParallel(imagePath: String, kernelPath: String, outputPath: String, thread: Int, method: SeparationMethods) {
     val image = toGrayscale(ImageIO.read(File(imagePath)))
     val kernel = readKernel(File(kernelPath))
     val width = image.width
@@ -20,17 +19,12 @@ fun runParallel(imagePath: String, kernelPath: String, outputPath: String, threa
     val pixels = IntArray(image.width * image.height)
     image.raster.getPixels(0, 0, width, height, pixels)
 
-    var lastResult: BufferedImage? = null
-    SeparationMethods.entries.forEach { method ->
+    val start = System.nanoTime()
+    val result = parallelConvolution(width, height, pixels, kernel, thread, method)
+    val elapsed = System.nanoTime() - start
 
-        val start = System.nanoTime()
-        val result = parallelConvolution(width, height, pixels, kernel, thread, method)
-        val elapsed = System.nanoTime() - start
-
-        println("%-20s %6d ms".format(method.name, elapsed / 1_000_000))
-        lastResult = result
-    }
+    println("%-20s %6d ms".format(method, elapsed / 1_000_000))
 
     println("-".repeat(70))
-    ImageIO.write(lastResult!!, "png", File(outputPath))
+    ImageIO.write(result, "png", File(outputPath))
 }
