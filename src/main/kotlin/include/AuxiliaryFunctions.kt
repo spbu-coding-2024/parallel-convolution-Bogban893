@@ -52,14 +52,14 @@ fun toGrayscale(image: BufferedImage): BufferedImage {
 }
 
 fun convolvePixel(pixels: IntArray, x: Int, y: Int, width: Int, height: Int, kernel: Kernel): Int {
-    val kCenterX = kernel.matrix.size / 2
-    val kCenterY = kernel.matrix[0].size / 2
+    val kCenterX = kernel.matrix[0].size / 2
+    val kCenterY = kernel.matrix.size / 2
     var sum = 0f
-    for (filterX in kernel.matrix.indices) {
-        for (filterY in kernel.matrix[filterX].indices) {
+    for (filterY in kernel.matrix.indices) {
+        for (filterX in kernel.matrix[filterY].indices) {
             val imageX = (x - kCenterX + filterX + width) % width
             val imageY = (y - kCenterY + filterY + height) % height
-            sum += pixels[imageY * width + imageX] * kernel.matrix[filterX][filterY]
+            sum += pixels[imageY * width + imageX] * kernel.matrix[filterY][filterX]
         }
     }
     return (sum * kernel.factor + kernel.bias).coerceIn(0f, 255f).toInt()
