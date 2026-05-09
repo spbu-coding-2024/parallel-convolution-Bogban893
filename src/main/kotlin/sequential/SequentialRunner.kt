@@ -4,8 +4,8 @@ import org.example.include.*
 import java.io.File
 import javax.imageio.ImageIO
 
-fun runSequential(imagePath: String, kernelPath: String, outputPath: String) {
-    val image = toGrayscale(ImageIO.read(File(imagePath)))
+fun runSequential(imagePath: File, kernelPath: String, outputPath: String) {
+    val image = toGrayscale(ImageIO.read(imagePath))
     val kernel = readKernel(File(kernelPath))
     val width = image.width
     val height = image.height
@@ -20,7 +20,7 @@ fun runSequential(imagePath: String, kernelPath: String, outputPath: String) {
     val result = convolution(width, height, pixels, kernel)
     val elapsed = System.nanoTime() - start
 
-    ImageIO.write(result, "png", File(outputPath))
+    ImageIO.write(result, imagePath.extension, File(outputPath))
     println("%-20s %6d ms".format("Time:", elapsed / 1_000_000))
     println("-".repeat(60))
 }

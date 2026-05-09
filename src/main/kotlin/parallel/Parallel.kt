@@ -8,8 +8,8 @@ import javax.imageio.ImageIO
 import org.example.include.parallelConvolution
 
 
-fun runParallel(imagePath: String, kernelPath: String, outputPath: String, thread: Int, method: SeparationMethods) {
-    val image = toGrayscale(ImageIO.read(File(imagePath)))
+fun runParallel(imagePath: File, kernelPath: String, outputPath: String, thread: Int, method: SeparationMethods) {
+    val image = toGrayscale(ImageIO.read(imagePath))
     val kernel = readKernel(File(kernelPath))
     val width = image.width
     val height = image.height
@@ -26,5 +26,5 @@ fun runParallel(imagePath: String, kernelPath: String, outputPath: String, threa
     println("%-20s %6d ms".format(method, elapsed / 1_000_000))
 
     println("-".repeat(70))
-    ImageIO.write(result, "png", File(outputPath))
+    ImageIO.write(result, imagePath.extension, File(outputPath))
 }

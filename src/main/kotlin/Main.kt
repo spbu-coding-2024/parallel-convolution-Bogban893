@@ -3,12 +3,37 @@ package org.example
 import kotlinx.cli.ArgParser
 import kotlinx.cli.ArgType
 import kotlinx.cli.default
+import kotlinx.cli.multiple
 import kotlinx.cli.required
 import org.example.include.SeparationMethods
 import parallel.runParallel
+import pipeline.runPipeline
 import sequential.runSequential
+import java.io.File
+import java.rmi.Naming.list
 
-enum class Mode { SEQUENTIAL, PARALLEL }
+enum class Mode {
+    SEQUENTIAL {
+        override fun toString() = "seq"
+    },
+    PARALLEL {
+        override fun toString() = "par"
+    },
+    PIPE_LINE {
+        override fun toString() = "pipe"
+    }
+}
+
+object ArgTypeFile : ArgType<File>(true) {
+    override val description = "File path"
+    override fun convert(value: kotlin.String, name: kotlin.String): File =
+        File(value).also {
+            require(it.exists()) { "File not found: $it" }
+        }
+
+
+
+}
 
 fun main(args: Array<String>) {
     val parser = ArgParser("convolution")
@@ -19,11 +44,11 @@ fun main(args: Array<String>) {
         description = "Processing mode"
     ).required()
 
-    val image by parser.option(
-        ArgType.String,
+    var image by parser.option(
+        ArgTypeFile,
         shortName = "i",
         description = "Input image path"
-    ).required()
+    ).multiple()
 
     val kernel by parser.option(
         ArgType.String,
@@ -52,8 +77,34 @@ fun main(args: Array<String>) {
 
     parser.parse(args)
 
+//    image = image.map { }
+
+    val inputFiles: List<File> = when {
+        image.isEmpty() -> error("No input image file")
+        image.size == 1 && image.first().isDirectory ->
+            image.first()
+                .listFiles { f -> f.extension.lowercase() in listOf("png", "jpg", "jpeg") }!!
+                .sorted()
+
+        else -> image.map { path ->
+            path.also { if (!it.isFile) error("File not found: $path") }
+        }
+    }
     when (mode) {
-        Mode.SEQUENTIAL -> runSequential(image, kernel, output)
-        Mode.PARALLEL -> runParallel(image, kernel, output, thread, methods)
+        Mode.SEQUENTIAL, Mode.PARALLEL -> {
+            if (inputFiles.size > 1)
+                println("WARNING: directory given in non-pipeline mode, using only first file: ${inputFiles.first().name}")
+            val output = if (File(output).isDirectory) File(output, "${image.first()}_out.png").toString() else output
+            if (mode == Mode.SEQUENTIAL) {
+                runSequential(image.first(), kernel, output)
+            } else {
+                runParallel(image.first(), kernel, output, thread, methods)
+            }
+        }
+
+        Mode.PIPE_LINE -> {
+            val output = inputFiles.map { file -> File(file.nameWithoutExtension) }
+            runPipeline(inputFiles, kernel, output, thread, methods)
+        }
     }
 }
