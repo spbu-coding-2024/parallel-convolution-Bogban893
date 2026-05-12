@@ -6,11 +6,10 @@ import kotlinx.cli.default
 import kotlinx.cli.multiple
 import kotlinx.cli.required
 import org.example.include.SeparationMethods
-import parallel.runParallel
-import pipeline.runPipeline
-import sequential.runSequential
+import org.example.parallel.runParallel
+import org.example.pipeline.runPipeline
+import org.example.sequential.runSequential
 import java.io.File
-import java.rmi.Naming.list
 
 enum class Mode {
     SEQUENTIAL {
@@ -32,7 +31,6 @@ object ArgTypeFile : ArgType<File>(true) {
         }
 
 
-
 }
 
 fun main(args: Array<String>) {
@@ -44,7 +42,7 @@ fun main(args: Array<String>) {
         description = "Processing mode"
     ).required()
 
-    var image by parser.option(
+    val image by parser.option(
         ArgTypeFile,
         shortName = "i",
         description = "Input image path"
@@ -94,7 +92,10 @@ fun main(args: Array<String>) {
         Mode.SEQUENTIAL, Mode.PARALLEL -> {
             if (inputFiles.size > 1)
                 println("WARNING: directory given in non-pipeline mode, using only first file: ${inputFiles.first().name}")
-            val output = if (File(output).isDirectory) File(output, "${image.first()}_out.png").toString() else output
+            val output = if (File(output).isDirectory) File(
+                output,
+                "${image.first().nameWithoutExtension}_out.${image.first().extension}"
+            ).toString() else output
             if (mode == Mode.SEQUENTIAL) {
                 runSequential(image.first(), kernel, output)
             } else {
@@ -103,7 +104,9 @@ fun main(args: Array<String>) {
         }
 
         Mode.PIPE_LINE -> {
-            val output = inputFiles.map { file -> File(file.nameWithoutExtension) }
+            val output = inputFiles.map { file ->
+                File(file.parentFile, file.nameWithoutExtension + "_out." + file.extension)
+            }
             runPipeline(inputFiles, kernel, output, thread, methods)
         }
     }

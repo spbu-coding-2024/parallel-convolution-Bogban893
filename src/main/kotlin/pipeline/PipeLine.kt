@@ -1,21 +1,17 @@
-package pipeline
+package org.example.pipeline
 
-import include.ImagePath
-import include.ImageTask
+import org.example.include.ImagePath
+import org.example.include.ImageTask
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
-import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.example.include.SeparationMethods
 import org.example.include.convolution
-import org.example.include.parallelConvolution
+import org.example.include.parallelConvolutionSuspend
 import org.example.include.readKernel
-import parallel.runParallel
-import sequential.runSequential
-import java.awt.Image
 import java.io.File
 import java.util.concurrent.Executors
 import javax.imageio.ImageIO
@@ -27,13 +23,12 @@ fun runPipeline(
     thread: Int,
     method: SeparationMethods
 ) {
+
+    val start = System.nanoTime()
     val kernel = readKernel(File(kernelPath))
     val toConvolve = Channel<ImageTask>(capacity = thread)
     val toWrite = Channel<ImageTask>(capacity = thread)
 
-
-    val executor = Executors.newFixedThreadPool(thread)
-    val dispatcher = executor.asCoroutineDispatcher()
 
     runBlocking {
         val reader = launch(Dispatchers.IO) {
@@ -47,14 +42,23 @@ fun runPipeline(
             toConvolve.close()
         }
 
+        val executor = Executors.newFixedThreadPool(thread)
+        val cpuDispatcher = executor.asCoroutineDispatcher()
         val workers = (0 until thread).map {
-            launch(dispatcher) {
+            launch(cpuDispatcher) {
                 for (task in toConvolve) {
-                    if (thread == 1) {
-                        task.res = convolution(task.width, task.height, task.pixels, kernel)
-                    } else {
-                        task.res = parallelConvolution(task.width, task.height, task.pixels, kernel, thread, method)
-                    }
+                    task.res = if (thread <= 1)
+                        convolution(task.width, task.height, task.pixels, kernel) // Подумать
+                    else
+                        parallelConvolutionSuspend(
+                            task.width,
+                            task.height,
+                            task.pixels,
+                            kernel,
+                            thread,
+                            method,
+                            cpuDispatcher
+                        )
                     toWrite.send(task)
                 }
             }
@@ -68,11 +72,13 @@ fun runPipeline(
 
         reader.join()
         workers.joinAll()
+        cpuDispatcher.close()
+        executor.shutdown()
         toWrite.close()
         writers.join()
     }
 
-    dispatcher.close()
-    executor.shutdown()
 
+    val elapsed = System.nanoTime() - start
+    println("Pipeline [${imagePath.size} images, threads: $thread]: ${elapsed / 1_000_000} ms")
 }
