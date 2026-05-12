@@ -1,4 +1,4 @@
-package parallel
+package org.example.parallel
 
 import org.example.include.SeparationMethods
 import org.example.include.readKernel

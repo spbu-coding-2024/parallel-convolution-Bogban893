@@ -1,6 +1,8 @@
 package org.example.include
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -32,12 +34,27 @@ fun parallelConvolution(
     thread: Int,
     methods: SeparationMethods
 ): BufferedImage {
-    val resultPixels = IntArray(width * height)
-
     val executor = Executors.newFixedThreadPool(thread)
     val dispatcher = executor.asCoroutineDispatcher()
 
-    runBlocking {
+    return try {
+        runBlocking {
+            parallelConvolutionSuspend(width, height, pixels, kernel, thread, methods, dispatcher)
+        }
+    } finally {
+        dispatcher.close()
+        executor.shutdown()
+    }
+}
+
+suspend fun parallelConvolutionSuspend(
+    width: Int, height: Int,
+    pixels: IntArray, kernel: Kernel,
+    thread: Int, methods: SeparationMethods,
+    dispatcher: CoroutineDispatcher
+): BufferedImage {
+    val resultPixels = IntArray(width * height)
+    coroutineScope {
         when (methods) {
             SeparationMethods.ROW_BY_ROW -> {
                 val chunk = height / thread
@@ -58,7 +75,7 @@ fun parallelConvolution(
                     launch(dispatcher) {
                         val startX = t * chunk
                         val endX = if (t == thread - 1) width else startX + chunk
-                        processRegion(startX, endX, 0, height, width, height,pixels, kernel, resultPixels)
+                        processRegion(startX, endX, 0, height, width, height, pixels, kernel, resultPixels)
                     }
                 }.joinAll()
             }
@@ -98,12 +115,9 @@ fun parallelConvolution(
                         }
                     }.joinAll()
             }
+
         }
     }
-
-    dispatcher.close()
-    executor.shutdown()
-
     val res = BufferedImage(width, height, BufferedImage.TYPE_BYTE_GRAY)
     res.raster.setPixels(0, 0, width, height, resultPixels)
     return res
