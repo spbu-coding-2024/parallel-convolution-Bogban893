@@ -1,16 +1,114 @@
 package org.example
 
-//TIP To <b>Run</b> code, press <shortcut actionId="Run"/> or
-// click the <icon src="AllIcons.Actions.Execute"/> icon in the gutter.
-fun main() {
-    val name = "Kotlin"
-    //TIP Press <shortcut actionId="ShowIntentionActions"/> with your caret at the highlighted text
-    // to see how IntelliJ IDEA suggests fixing it.
-    println("Hello, " + name + "!")
+import kotlinx.cli.ArgParser
+import kotlinx.cli.ArgType
+import kotlinx.cli.default
+import kotlinx.cli.multiple
+import kotlinx.cli.required
+import org.example.include.SeparationMethods
+import org.example.parallel.runParallel
+import org.example.pipeline.runPipeline
+import org.example.sequential.runSequential
+import java.io.File
 
-    for (i in 1..5) {
-        //TIP Press <shortcut actionId="Debug"/> to start debugging your code. We have set one <icon src="AllIcons.Debugger.Db_set_breakpoint"/> breakpoint
-        // for you, but you can always add more by pressing <shortcut actionId="ToggleLineBreakpoint"/>.
-        println("i = $i")
+enum class Mode {
+    SEQUENTIAL {
+        override fun toString() = "seq"
+    },
+    PARALLEL {
+        override fun toString() = "par"
+    },
+    PIPE_LINE {
+        override fun toString() = "pipe"
+    }
+}
+
+object ArgTypeFile : ArgType<File>(true) {
+    override val description = "File path"
+    override fun convert(value: kotlin.String, name: kotlin.String): File =
+        File(value).also {
+            require(it.exists()) { "File not found: $it" }
+        }
+}
+
+fun main(args: Array<String>) {
+    val parser = ArgParser("convolution")
+
+    val mode by parser.option(
+        ArgType.Choice<Mode>(),
+        shortName = "m",
+        description = "Processing mode"
+    ).required()
+
+    val image by parser.option(
+        ArgTypeFile,
+        shortName = "i",
+        description = "Input image path"
+    ).multiple()
+
+    val kernel by parser.option(
+        ArgType.String,
+        shortName = "k",
+        description = "Kernel file path"
+    ).required()
+
+    val output by parser.option(
+        ArgType.String,
+        shortName = "o",
+        description = "Output image path",
+        fullName = "output"
+    ).default("output.png")
+
+    val thread by parser.option(
+        ArgType.Int,
+        shortName = "t",
+        description = "Thread count",
+    ).default(2)
+
+    val methods by parser.option(
+        ArgType.Choice<SeparationMethods>(),
+        shortName = "s",
+        description = "Input separation methods"
+    ).default(SeparationMethods.ROW_BY_ROW)
+
+    parser.parse(args)
+
+    val inputFiles: List<File> = when {
+        image.isEmpty() -> error("No input image file provided (-i flag)")
+        image.size == 1 && image.first().isDirectory ->
+            image.first()
+                .listFiles { f -> f.extension.lowercase() in listOf("png", "jpg", "jpeg") }
+                ?.sorted()
+                ?: error("No supported images found in directory: ${image.first()}")
+
+        else -> image.map { path ->
+            path.also { if (!it.isFile) error("Not a file: $path") }
+        }
+    }
+
+    when (mode) {
+        Mode.SEQUENTIAL, Mode.PARALLEL -> {
+            val inputFile = inputFiles.first()
+            if (inputFiles.size > 1) {
+                println("WARNING: multiple files given in non-pipeline mode, using only: ${inputFile.name}")
+            }
+            val resolvedOutput = if (File(output).isDirectory) {
+                File(output, "${inputFile.nameWithoutExtension}_out.${inputFile.extension}").toString()
+            } else {
+                output
+            }
+            if (mode == Mode.SEQUENTIAL) {
+                runSequential(inputFile, kernel, resolvedOutput)
+            } else {
+                runParallel(inputFile, kernel, resolvedOutput, thread, methods)
+            }
+        }
+
+        Mode.PIPE_LINE -> {
+            val outputPaths = inputFiles.map { file ->
+                File(file.parentFile, "${file.nameWithoutExtension}_out.${file.extension}")
+            }
+            runPipeline(inputFiles, kernel, outputPaths, thread, methods)
+        }
     }
 }
