@@ -1,14 +1,19 @@
 package org.example
 
 import org.example.include.*
+import org.example.pipeline.runPipeline
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.RepeatedTest
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.MethodSource
 import java.awt.image.BufferedImage
+import java.io.File
+import java.nio.file.Path
 import java.util.stream.Stream
+import javax.imageio.ImageIO
 import kotlin.random.Random
 import kotlin.test.assertEquals
 
@@ -77,6 +82,8 @@ class ConvolutionTest {
         image.raster.getPixels(0, 0, width, height, result)
         return result
     }
+
+    // --- Sequential tests ----------------------------------------------------
 
     @Test
     fun `Identity kernel leaves image unchanged across different sizes`() {
@@ -155,6 +162,8 @@ class ConvolutionTest {
         )
     }
 
+    // --- Parameterised sequential tests --------------------------------------
+
     @ParameterizedTest(name = "{0}")
     @MethodSource("imageSizes")
     fun `zero kernel with bias fills image with bias value`(p: ImageKernelSize) {
@@ -220,6 +229,8 @@ class ConvolutionTest {
         assertEquals(p.h, result.height, "Height must be preserved")
     }
 
+    // --- Parallel correctness -------------------------------------------------
+
     @RepeatedTest(5)
     fun `parallel result matches sequential`() {
         val imageSizes = listOf(
@@ -246,6 +257,139 @@ class ConvolutionTest {
             }
         }
     }
+
+    // --- Pipeline tests -------------------------------------------------------
+    private fun writeTempImage(pixels: IntArray, width: Int, height: Int, file: File) {
+        val img = BufferedImage(width, height, BufferedImage.TYPE_BYTE_GRAY)
+        img.raster.setPixels(0, 0, width, height, pixels)
+        ImageIO.write(img, "png", file)
+    }
+
+    private fun writeKernelFile(kernel: Kernel, file: File) {
+        val rows = kernel.matrix.size
+        val cols = kernel.matrix[0].size
+        val sb = StringBuilder()
+        sb.appendLine("$rows $cols")
+        kernel.matrix.forEach { row -> sb.appendLine(row.joinToString(" ")) }
+        sb.appendLine("${kernel.factor} ${kernel.bias}")
+        file.writeText(sb.toString())
+    }
+
+    @Test
+    fun `pipeline single image matches sequential`(@TempDir tmp: Path) {
+        val w = 32; val h = 32
+        val pixels = randomImage(w, h)
+        val kernel = randomKernel(3)
+
+        val inputFile = tmp.resolve("input.png").toFile()
+        val outputFile = tmp.resolve("output.png").toFile()
+        val kernelFile = tmp.resolve("kernel.txt").toFile()
+
+        writeTempImage(pixels, w, h, inputFile)
+        writeKernelFile(kernel, kernelFile)
+
+        runPipeline(listOf(inputFile), kernelFile.path, listOf(outputFile), thread = 2, method = SeparationMethods.ROW_BY_ROW)
+
+        val pipelineResult = ImageIO.read(outputFile).toPixels()
+        val seqResult = applyConvolution(w, h, pixels, kernel)
+
+        assertArrayEquals(seqResult, pipelineResult, "Pipeline single-image result must match sequential")
+    }
+
+    @Test
+    fun `pipeline multiple images each match sequential`(@TempDir tmp: Path) {
+        val imageCount = 4
+        val w = 24; val h = 24
+        val kernel = randomKernel(3)
+        val kernelFile = tmp.resolve("kernel.txt").toFile()
+        writeKernelFile(kernel, kernelFile)
+
+        val inputs = (0 until imageCount).map { i ->
+            val pixels = randomImage(w, h)
+            val f = tmp.resolve("img_$i.png").toFile()
+            writeTempImage(pixels, w, h, f)
+            f to pixels
+        }
+
+        val inputFiles = inputs.map { it.first }
+        val outputFiles = inputs.mapIndexed { i, _ -> tmp.resolve("out_$i.png").toFile() }
+
+        runPipeline(inputFiles, kernelFile.path, outputFiles, thread = 2, method = SeparationMethods.ROW_BY_ROW)
+
+        inputs.forEachIndexed { i, (_, pixels) ->
+            val pipelineResult = ImageIO.read(outputFiles[i]).toPixels()
+            val seqResult = applyConvolution(w, h, pixels, kernel)
+            assertArrayEquals(seqResult, pipelineResult, "Pipeline image $i result must match sequential")
+        }
+    }
+
+    @Test
+    fun `pipeline with single thread matches sequential`(@TempDir tmp: Path) {
+        val w = 16; val h = 16
+        val pixels = randomImage(w, h)
+        val kernel = randomKernel(3)
+
+        val inputFile = tmp.resolve("input.png").toFile()
+        val outputFile = tmp.resolve("output.png").toFile()
+        val kernelFile = tmp.resolve("kernel.txt").toFile()
+
+        writeTempImage(pixels, w, h, inputFile)
+        writeKernelFile(kernel, kernelFile)
+
+        // thread=1 triggers the convolution() branch (not parallelConvolutionSuspend)
+        runPipeline(listOf(inputFile), kernelFile.path, listOf(outputFile), thread = 1, method = SeparationMethods.ROW_BY_ROW)
+
+        val pipelineResult = ImageIO.read(outputFile).toPixels()
+        val seqResult = applyConvolution(w, h, pixels, kernel)
+
+        assertArrayEquals(seqResult, pipelineResult, "Pipeline thread=1 must match sequential")
+    }
+
+    @Test
+    fun `pipeline image count smaller than thread count`(@TempDir tmp: Path) {
+        // 1 image, 4 threads — workers that get nothing from the channel should exit cleanly
+        val w = 8; val h = 8
+        val pixels = randomImage(w, h)
+        val kernel = randomKernel(3)
+
+        val inputFile = tmp.resolve("input.png").toFile()
+        val outputFile = tmp.resolve("output.png").toFile()
+        val kernelFile = tmp.resolve("kernel.txt").toFile()
+
+        writeTempImage(pixels, w, h, inputFile)
+        writeKernelFile(kernel, kernelFile)
+
+        runPipeline(listOf(inputFile), kernelFile.path, listOf(outputFile), thread = 4, method = SeparationMethods.ROW_BY_ROW)
+
+        val pipelineResult = ImageIO.read(outputFile).toPixels()
+        val seqResult = applyConvolution(w, h, pixels, kernel)
+
+        assertArrayEquals(seqResult, pipelineResult, "Pipeline with more threads than images must still work correctly")
+    }
+
+    @Test
+    fun `pipeline all separation methods match sequential`(@TempDir tmp: Path) {
+        val w = 20; val h = 20
+        val pixels = randomImage(w, h)
+        val kernel = randomKernel(3)
+        val kernelFile = tmp.resolve("kernel.txt").toFile()
+        writeKernelFile(kernel, kernelFile)
+
+        val seqResult = applyConvolution(w, h, pixels, kernel)
+
+        SeparationMethods.entries.forEach { method ->
+            val inputFile = tmp.resolve("input_$method.png").toFile()
+            val outputFile = tmp.resolve("output_$method.png").toFile()
+            writeTempImage(pixels, w, h, inputFile)
+
+            runPipeline(listOf(inputFile), kernelFile.path, listOf(outputFile), thread = 2, method = method)
+
+            val pipelineResult = ImageIO.read(outputFile).toPixels()
+            assertArrayEquals(seqResult, pipelineResult, "Pipeline method=$method must match sequential")
+        }
+    }
+
+    // --- Companion ------------------------------------------------------------
 
     companion object {
         @JvmStatic
