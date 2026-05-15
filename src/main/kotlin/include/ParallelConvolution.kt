@@ -54,6 +54,7 @@ suspend fun parallelConvolutionSuspend(
     dispatcher: CoroutineDispatcher
 ): BufferedImage {
     val resultPixels = IntArray(width * height)
+
     coroutineScope {
         when (methods) {
             SeparationMethods.ROW_BY_ROW -> {
@@ -98,10 +99,11 @@ suspend fun parallelConvolutionSuspend(
             }
 
             SeparationMethods.GRID -> {
-                val tileRows = sqrt(thread.toDouble()).toInt().coerceAtLeast(1)
-                val tileCols = (thread / tileRows).coerceAtLeast(1)
+                val tileRows = bestRowCount(thread)
+                val tileCols = thread / tileRows
                 val tileH = height / tileRows
                 val tileW = width / tileCols
+
                 (0 until tileRows).flatMap { row -> (0 until tileCols).map { col -> Pair(row, col) } }
                     .map { (row, col) ->
                         launch(dispatcher) {
@@ -111,7 +113,10 @@ suspend fun parallelConvolutionSuspend(
                             val endX = if (col == tileCols - 1) width else startX + tileW
                             for (y in startY until endY)
                                 for (x in startX until endX)
-                                    resultPixels[y * width + x] = convolvePixel(pixels, x, y, width, height, kernel)
+                                    resultPixels[
+                                        y * width + x] =
+                                        convolvePixel(pixels, x, y, width, height, kernel)
+
                         }
                     }.joinAll()
             }
@@ -121,4 +126,13 @@ suspend fun parallelConvolutionSuspend(
     val res = BufferedImage(width, height, BufferedImage.TYPE_BYTE_GRAY)
     res.raster.setPixels(0, 0, width, height, resultPixels)
     return res
+}
+
+private fun bestRowCount(thread: Int): Int {
+    require(thread >= 1) { "Thread count must be >= 1" }
+    val sqr = sqrt(thread.toDouble()).toInt()
+    for (r in sqr downTo 1) {
+        if (thread % r == 0) return r
+    }
+    return 1
 }

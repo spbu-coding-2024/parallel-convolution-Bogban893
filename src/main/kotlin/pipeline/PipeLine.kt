@@ -8,77 +8,93 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import org.example.include.ImageResult
 import org.example.include.SeparationMethods
-import org.example.include.convolution
 import org.example.include.parallelConvolutionSuspend
 import org.example.include.readKernel
+import org.example.include.toGrayscale
 import java.io.File
 import java.util.concurrent.Executors
 import javax.imageio.ImageIO
 
 fun runPipeline(
-    imagePath: List<File>,
+    imagePaths: List<File>,
     kernelPath: String,
-    outputPath: List<File>,
+    outputPaths: List<File>,
     thread: Int,
     method: SeparationMethods
 ) {
+    require(imagePaths.size == outputPaths.size) {
+        "Input and output lists must have the same size"
+    }
 
-    val start = System.nanoTime()
+    val writerCount = maxOf(1, thread / 4)
     val kernel = readKernel(File(kernelPath))
     val toConvolve = Channel<ImageTask>(capacity = thread)
-    val toWrite = Channel<ImageTask>(capacity = thread)
+    val toWrite    = Channel<ImageResult>(capacity = writerCount)
 
+    val cpuExecutor   = Executors.newFixedThreadPool(thread)
+    val cpuDispatcher = cpuExecutor.asCoroutineDispatcher()
+
+    val start = System.nanoTime()
 
     runBlocking {
         val reader = launch(Dispatchers.IO) {
-            for ((input, output) in imagePath.zip(outputPath)) {
-                val image = ImageIO.read(input)
+            for ((input, output) in imagePaths.zip(outputPaths)) {
+                val image  = toGrayscale(ImageIO.read(input))   // fixed: always grayscale
                 val pixels = IntArray(image.width * image.height)
                 image.raster.getPixels(0, 0, image.width, image.height, pixels)
-                val task = ImageTask(ImagePath(input, output), pixels, image.width, image.height, kernel)
-                toConvolve.send(task)
+
+                toConvolve.send(
+                    ImageTask(
+                        path   = ImagePath(input, output),
+                        pixels = pixels,
+                        width  = image.width,
+                        height = image.height,
+                        kernel = kernel
+                    )
+                )
             }
             toConvolve.close()
         }
+        val worker = launch(Dispatchers.Default) {
+            for (task in toConvolve) {
+                val result = parallelConvolutionSuspend(
+                    width      = task.width,
+                    height     = task.height,
+                    pixels     = task.pixels,
+                    kernel     = task.kernel,
+                    thread     = thread,
+                    methods    = method,
+                    dispatcher = cpuDispatcher
+                )
+                toWrite.send(ImageResult(task.path, result))
+            }
+        }
 
-        val executor = Executors.newFixedThreadPool(thread)
-        val cpuDispatcher = executor.asCoroutineDispatcher()
-        val workers = (0 until thread).map {
-            launch(cpuDispatcher) {
-                for (task in toConvolve) {
-                    task.res = if (thread <= 1)
-                        convolution(task.width, task.height, task.pixels, kernel) // Подумать
-                    else
-                        parallelConvolutionSuspend(
-                            task.width,
-                            task.height,
-                            task.pixels,
-                            kernel,
-                            thread,
-                            method,
-                            cpuDispatcher
-                        )
-                    toWrite.send(task)
+        val writers = (0 until writerCount).map {
+            launch(Dispatchers.IO) {
+                for (result in toWrite) {
+                    ImageIO.write(
+                        result.image,
+                        result.path.input.extension,
+                        result.path.output
+                    )
                 }
             }
         }
 
-        val writers = launch(Dispatchers.IO) {
-            for (task in toWrite) {
-                ImageIO.write(task.res, task.path.input.extension, task.path.output)
-            }
-        }
-
         reader.join()
-        workers.joinAll()
-        cpuDispatcher.close()
-        executor.shutdown()
+        worker.join()
         toWrite.close()
-        writers.join()
+        cpuDispatcher.close()
+        cpuExecutor.shutdown()
+        writers.joinAll()
     }
 
-
     val elapsed = System.nanoTime() - start
-    println("Pipeline [${imagePath.size} images, threads: $thread]: ${elapsed / 1_000_000} ms")
+    println(
+        "Pipeline [${imagePaths.size} images, threads: $thread, " +
+                "writers: $writerCount, method: $method]: ${elapsed / 1_000_000} ms"
+    )
 }

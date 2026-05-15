@@ -29,10 +29,14 @@ fun readKernel(file: File): Kernel {
     val lines = file.readLines().filter { it.isNotBlank() }
     val (rows, cols) = lines[0].split("\\s+".toRegex()).map { it.toInt() }
     require(rows % 2 != 0 && cols % 2 != 0) { "Kernel dimensions must be odd, got ${rows}x${cols}" }
-    require(lines.size >= rows + 1) { "File has fewer rows than declared" }
+    require(lines.size >= rows + 1) { "File has fewer rows than declared (need $rows data rows)" }
 
     val matrix = Array(rows) { i ->
-        lines[i + 1].trim().split("\\s+".toRegex()).map { it.toFloat() }
+        val rowValues = lines[i + 1].trim().split("\\s+".toRegex()).map { it.toFloat() }
+        require(rowValues.size == cols) {
+            "Kernel row ${i + 1} has ${rowValues.size} values, expected $cols"
+        }
+        rowValues
     }.map { it.toList() }
 
     val (factor, bias) = if (lines.size > rows + 1)

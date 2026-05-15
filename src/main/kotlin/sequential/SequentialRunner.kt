@@ -10,7 +10,7 @@ fun runSequential(imagePath: File, kernelPath: String, outputPath: String) {
     val width = image.width
     val height = image.height
 
-    val pixels = IntArray(image.width * image.height)
+    val pixels = IntArray(width * height)
     image.raster.getPixels(0, 0, width, height, pixels)
 
     println("Sequential [${width}x${height}, kernel ${kernel.matrix.size}x${kernel.matrix[0].size}, factor ${kernel.factor}, bias ${kernel.bias}]")
